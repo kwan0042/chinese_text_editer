@@ -8,7 +8,7 @@ import { generatePDF } from './utils/pdfUtils';
 
 const DEFAULT_DOC_STATE: DocumentState = {
   companyHeader: { text: '範例有限公司\nExample Company Ltd.', align: 'center' },
-  subject: { text: '主旨：關於文件自動化生成的測試', align: 'left' },
+  subject: { text: '主旨：關於文件自動化生成的測試', align: 'center' },
   salutation: { text: '敬啟者：', align: 'left' },
   content: { text: '這是一份測試文件。\n\n您可以在左側（或上方）的編輯區域修改所有文字內容。支援自動排版與簽名拖曳功能。\n\n請嘗試上傳您的簽名檔，並將其拖曳至此處下方。', align: 'left' },
   closing: { text: '謹啟', align: 'right' },
@@ -18,8 +18,8 @@ const DEFAULT_DOC_STATE: DocumentState = {
 
 const DEFAULT_SIG_STATE: SignatureState = {
   image: null,
-  x: 500, // Default bottom right approx
-  y: 800,
+  x: 400, // Central X
+  y: 700, // Lower half Y
   width: 150,
   rotation: 0
 };
@@ -29,7 +29,7 @@ const App: React.FC = () => {
   const [signature, setSignature] = useState<SignatureState>(DEFAULT_SIG_STATE);
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
   const [previewScale, setPreviewScale] = useState(0.45); // Scale for mobile view
-  const [footerMode, setFooterMode] = useState<'normal' | 'bottom'>('bottom');
+  const [footerMode, setFooterMode] = useState<'normal' | 'bottom'>('normal');
 
   // Calculate appropriate scale based on window width
   useEffect(() => {
@@ -49,26 +49,14 @@ const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const handleSignatureDrag = (e: any, data: { x: number; y: number }) => {
-    setSignature(prev => ({ ...prev, x: data.x, y: data.y }));
+  const handleSignatureChange = (newSig: SignatureState) => {
+    setSignature(newSig);
   };
 
   const handleDownload = () => {
-    // Switch to preview tab momentarily to ensure render if we were doing lazy loading (not needed here but good practice)
-    // Actually html2canvas needs the element to be visible.
-    // If mobile user is on 'Edit' tab, the Preview might be hidden. 
-    // We must ensure the preview is rendered but maybe offscreen or in a specific mode?
-    // In our mobile layout, we use tabs. So we force switch to preview if on mobile.
-    
-    const isMobile = window.innerWidth < 1024;
-    if (isMobile && activeTab !== 'preview') {
-      setActiveTab('preview');
-      setTimeout(() => {
-        generatePDF('pdf-content', `${docState.subject.text || '文件'}.pdf`);
-      }, 500); // Wait for render
-    } else {
-      generatePDF('pdf-content', `${docState.subject.text || '文件'}.pdf`);
-    }
+    // With the new cloning strategy in pdfUtils, we don't need to force switch tabs.
+    // The background process creates a full A4 clone regardless of visibility.
+    generatePDF('pdf-content', `${docState.subject.text || '文件'}.pdf`);
   };
 
   return (
@@ -208,7 +196,7 @@ const App: React.FC = () => {
             <DocumentPreview 
                 docState={docState}
                 signature={signature}
-                onSignatureDragStop={handleSignatureDrag}
+                onSignatureChange={handleSignatureChange}
                 scale={previewScale}
                 footerMode={footerMode}
             />

@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import Draggable from 'react-draggable';
 import { DocumentState, SignatureState } from '../types';
 
 interface DocumentPreviewProps {
   docState: DocumentState;
   signature: SignatureState;
-  onSignatureDragStop: (e: any, data: { x: number; y: number }) => void;
+  onSignatureChange: (newSig: SignatureState) => void;
   scale?: number; // For responsive scaling
   footerMode: 'normal' | 'bottom';
 }
@@ -13,17 +13,68 @@ interface DocumentPreviewProps {
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({ 
   docState, 
   signature,
-  onSignatureDragStop,
+  onSignatureChange,
   scale = 1,
   footerMode
 }) => {
   // A4 dimensions in pixels at 96 DPI (approx)
-  // Width: 210mm ~= 794px
-  // Height: 297mm ~= 1123px
-  // We use a container that scales using CSS transform
-  
   const A4_WIDTH = 794;
   const A4_HEIGHT = 1123;
+
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const signatureRef = useRef<HTMLDivElement>(null);
+
+  // Helper to handle Resize and Rotate logic
+  // We use window events to track dragging even if mouse leaves the handle
+  const handleControlStart = (e: React.MouseEvent | React.TouchEvent, mode: 'resize' | 'rotate') => {
+    e.stopPropagation(); // Prevent Draggable from activating
+    // e.preventDefault(); // Do not prevent default to allow scrolling if needed, but here we likely want to lock
+    
+    const startX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const startY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    
+    const rect = signatureRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const startWidth = signature.width;
+    const startRotation = signature.rotation;
+    
+    // Initial distance for resizing (from center to mouse)
+    const startDist = Math.hypot(startX - centerX, startY - centerY);
+    // Initial angle for rotation
+    const startAngle = Math.atan2(startY - centerY, startX - centerX) * 180 / Math.PI;
+
+    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
+      const moveX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : (moveEvent as MouseEvent).clientX;
+      const moveY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : (moveEvent as MouseEvent).clientY;
+
+      if (mode === 'resize') {
+        const currentDist = Math.hypot(moveX - centerX, moveY - centerY);
+        const scaleFactor = currentDist / startDist;
+        const newWidth = Math.max(50, startWidth * scaleFactor);
+        
+        onSignatureChange({ ...signature, width: newWidth });
+      } else if (mode === 'rotate') {
+        const currentAngle = Math.atan2(moveY - centerY, moveX - centerX) * 180 / Math.PI;
+        const deltaAngle = currentAngle - startAngle;
+        onSignatureChange({ ...signature, rotation: startRotation + deltaAngle });
+      }
+    };
+
+    const onEnd = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onEnd);
+  };
 
   return (
     <div className="relative flex justify-center bg-slate-200 p-4 overflow-hidden rounded-xl border border-slate-300">
@@ -36,11 +87,14 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           transformOrigin: 'top center',
           marginBottom: -(A4_HEIGHT - (A4_HEIGHT * scale)) // Compensate for vertical space loss due to scaling
         }}
-        className="bg-white shadow-2xl relative shrink-0"
-        id="pdf-content"
+        className="shadow-2xl relative shrink-0 bg-white"
+        // ID removed from here to avoid capturing shadow
       >
-        {/* Padding container inside the paper */}
-        <div className="w-full h-full p-[60px] flex flex-col font-serif text-slate-900 relative z-0">
+        {/* Actual capture target - Pure white, no shadow */}
+        <div 
+            id="pdf-content" 
+            className="w-full h-full p-[60px] flex flex-col font-serif text-slate-900 relative z-0 bg-white"
+        >
             
             {/* Header */}
             {docState.companyHeader.text && (
@@ -53,7 +107,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
             {/* Subject/Title */}
             <div className="mb-6" style={{ textAlign: docState.subject.align }}>
-                <h2 className="text-xl font-bold break-words whitespace-pre-wrap underline decoration-slate-400 decoration-1 underline-offset-4">
+                <h2 className="text-xl font-bold break-words whitespace-pre-wrap decoration-slate-400 decoration-1 ">
                     {docState.subject.text}
                 </h2>
             </div>
@@ -93,32 +147,59 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 </div>
             </div>
 
-            {/* Signature Overlay - Absolute positioned relative to the A4 paper */}
-            {/* We use a portal-like approach visually, but technically it's inside the div to be captured by html2canvas */}
+            {/* Signature Overlay */}
             {signature.image && (
                 <Draggable
+                    nodeRef={nodeRef}
                     bounds="parent"
                     position={{ x: signature.x, y: signature.y }}
-                    onStop={onSignatureDragStop}
+                    onStop={(e, data) => onSignatureChange({ ...signature, x: data.x, y: data.y })}
+                    cancel=".control-handle" // Prevent dragging when clicking handles
+                    scale={scale} // Important for tracking cursor correctly when scaled
                 >
+                    {/* Outer div: Handles Position (Translate) via Draggable */}
                     <div 
-                        className="absolute cursor-move z-10 group"
-                        style={{ 
-                            width: signature.width,
-                            transform: `rotate(${signature.rotation}deg)`,
-                            // When generating PDF, border should disappear.
-                            // However, html2canvas captures what it sees.
-                            // We rely on 'group-hover' to show border only during edit, 
-                            // assuming html2canvas isn't run while hovering.
-                        }}
+                        ref={nodeRef}
+                        className="absolute top-0 left-0 cursor-move z-20 group"
+                        style={{ width: signature.width }}
                     >
-                        <img 
-                            src={signature.image} 
-                            alt="Signature" 
-                            className="w-full h-auto pointer-events-none select-none"
-                            style={{ mixBlendMode: 'multiply' }} // multiply effect for realistic stamp/sig
-                        />
-                        <div className="absolute inset-0 border-2 border-blue-400 opacity-0 group-hover:opacity-100 transition-opacity rounded pointer-events-none"></div>
+                        {/* Inner wrapper for Rotation */}
+                        <div 
+                            ref={signatureRef}
+                            className="relative"
+                            style={{ transform: `rotate(${signature.rotation}deg)` }}
+                        >
+                            <img 
+                                src={signature.image} 
+                                alt="Signature" 
+                                className="w-full h-auto pointer-events-none select-none"
+                                style={{ mixBlendMode: 'multiply' }} 
+                            />
+                            
+                            {/* Controls - Visible on Hover or Always visible on mobile/touch if needed. 
+                                We use group-hover for desktop, but for mobile usefulness, we might want them slightly visible or relying on user knowing to tap.
+                                Let's make them visible when hovering the signature area. 
+                            */}
+                            <div className="absolute inset-0 border-2 border-blue-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+
+                            {/* Rotate Handle (Top Center) */}
+                            <div 
+                                className="control-handle absolute -top-8 left-1/2 transform -translate-x-1/2 w-8 h-8 flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity bg-white border border-slate-300 rounded-full shadow-md z-30 touch-none"
+                                onMouseDown={(e) => handleControlStart(e, 'rotate')}
+                                onTouchStart={(e) => handleControlStart(e, 'rotate')}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                            </div>
+                             {/* Connector line for rotate handle */}
+                             <div className="absolute -top-4 left-1/2 w-0.5 h-4 bg-blue-400 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+                            {/* Resize Handle (Bottom Right) */}
+                            <div 
+                                className="control-handle absolute -bottom-3 -right-3 w-6 h-6 bg-white border-2 border-blue-500 rounded-full cursor-se-resize shadow-md z-30 opacity-0 group-hover:opacity-100 transition-opacity touch-none"
+                                onMouseDown={(e) => handleControlStart(e, 'resize')}
+                                onTouchStart={(e) => handleControlStart(e, 'resize')}
+                            ></div>
+                        </div>
                     </div>
                 </Draggable>
             )}

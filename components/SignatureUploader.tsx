@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Upload, X, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { SignatureState } from '../types';
 
 interface SignatureUploaderProps {
@@ -33,14 +33,6 @@ const SignatureUploader: React.FC<SignatureUploaderProps> = ({ signature, onChan
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const adjustSize = (delta: number) => {
-    onChange({ ...signature, width: Math.max(50, signature.width + delta) });
-  };
-
-  const adjustRotation = () => {
-    onChange({ ...signature, rotation: (signature.rotation + 90) % 360 });
-  };
-
   return (
     <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4">
       <div className="flex justify-between items-center mb-4">
@@ -72,31 +64,17 @@ const SignatureUploader: React.FC<SignatureUploaderProps> = ({ signature, onChan
           />
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
-           <button 
-            onClick={() => adjustSize(-10)}
-            className="flex-1 flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg text-sm"
-          >
-            <ZoomOut size={16} /> 縮小
-          </button>
-          <button 
-            onClick={() => adjustSize(10)}
-            className="flex-1 flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg text-sm"
-          >
-            <ZoomIn size={16} /> 放大
-          </button>
-           <button 
-            onClick={adjustRotation}
-            className="flex-1 flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg text-sm"
-          >
-            <RotateCw size={16} /> 旋轉
-          </button>
+        <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2">
+           <div className="mt-0.5">ℹ️</div>
+           <div>
+             <strong>操作說明：</strong>
+             <ul className="list-disc ml-4 mt-1 space-y-1 text-xs">
+               <li>拖曳簽名可移動位置。</li>
+               <li>拖曳 <span className="inline-block w-4 h-4 bg-white border border-blue-500 rounded-full align-middle mx-1"></span> 圓點可調整大小。</li>
+               <li>拖曳 <span className="inline-block w-4 h-4 bg-white border border-blue-500 rounded-full align-middle mx-1"></span> 上方圓點可旋轉角度。</li>
+             </ul>
+           </div>
         </div>
-      )}
-      {signature.image && (
-          <p className="text-xs text-slate-400 mt-2 text-center">
-            提示：在下方預覽區中可直接拖曳簽名移動位置
-          </p>
       )}
     </div>
   );
